@@ -53,19 +53,25 @@ async function fillSingleField(field) {
     return;
   }
 
-  // 4️⃣ DATE
+  // 4️⃣ N2O NUMBER
+  if (isN2ONumberField(field)) {
+    fillN2ONumberField(field);
+    return;
+  }
+
+  // 5️⃣ DATE
   if (isDateField(meta)) {
     fillDateField(field);
     return;
   }
 
-  // 5️⃣ NATIVE SELECT
+  // 6️⃣ NATIVE SELECT
   if (field.tagName === "SELECT") {
     fillNativeSelect(field);
     return;
   }
 
-  // 6️⃣ REGULAR INPUT
+  // 7️⃣ REGULAR INPUT
   simulateTyping(field, generateValue(meta));
 }
 
@@ -153,6 +159,26 @@ function fillN2ORadioGroup(group) {
 }
 
 /* =========================
+   N2O NUMBER INPUT
+========================= */
+
+function isN2ONumberField(field) {
+  return (
+    field.tagName === "INPUT" &&
+    field.closest(".n2o-input-number")
+  );
+}
+
+function fillN2ONumberField(field) {
+  const min = field.min !== "" ? parseInt(field.min, 10) : 0;
+  const max = field.max !== "" ? parseInt(field.max, 10) : min + 100;
+
+  const value = randomInt(min, Math.min(max, min + 50));
+
+  simulateTyping(field, String(value));
+}
+
+/* =========================
    META EXTRACTION
 ========================= */
 
@@ -233,6 +259,10 @@ function generatePhone() {
 
 function random(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
 }
 
 /* =========================
