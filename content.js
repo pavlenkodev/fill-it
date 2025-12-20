@@ -1,14 +1,44 @@
+/* =========================
+   SETTINGS
+========================= */
+
+const SETTINGS = {
+  SKIP_FILLED_FIELDS: true,   // не трогать, если поле уже заполнено
+  CHECK_NEW_FIELDS: true,     // повторно проверить форму после заполнения
+  MAX_PASSES: 2               // максимум проходов по форме
+};
+
+/* =========================
+   ENTRY POINT
+========================= */
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "FILL_FORM") {
-    fillFormSequentially();
+    fillFormWithRecheck();
   }
 });
 
 /* =========================
-   SEQUENTIAL FLOW
+   MAIN FLOW
+========================= */
+
+async function fillFormWithRecheck() {
+  let pass = 0;
+
+  while (pass < SETTINGS.MAX_PASSES) {
+    const filledSomething = await fillFormSequentially();
+    if (!SETTINGS.CHECK_NEW_FIELDS || !filledSomething) break;
+    pass++;
+  }
+}
+
+/* =========================
+   SEQUENTIAL FILL
 ========================= */
 
 async function fillFormSequentially() {
+  let filledSomething = false;
+
   const fields = Array.from(
     document.querySelectorAll("input, textarea, select")
   ).filter(f =>
@@ -19,12 +49,44 @@ async function fillFormSequentially() {
 
   for (const field of fields) {
     try {
+      if (SETTINGS.SKIP_FILLED_FIELDS && isFieldFilled(field)) continue;
+
       await fillSingleField(field);
+      filledSomething = true;
       await delay(300);
     } catch (e) {
       console.warn("Skip field:", field, e);
     }
   }
+
+  return filledSomething;
+}
+
+/* =========================
+   FILLED CHECK
+========================= */
+
+function isFieldFilled(field) {
+  // N2O MULTI SELECT
+  if (isN2OMultiSelect(field)) {
+    return field
+      .closest(".zireael-multiple-selector")
+      ?.querySelector(".zireael-tag") !== null;
+  }
+
+  // RADIO GROUP
+  const radioGroup = field.closest(".zireael-radio-group");
+  if (radioGroup) {
+    return radioGroup.querySelector("input:checked") !== null;
+  }
+
+  // SELECT
+  if (field.tagName === "SELECT") {
+    return field.value !== "";
+  }
+
+  // INPUT / TEXTAREA
+  return field.value && field.value.trim() !== "";
 }
 
 /* =========================
@@ -34,44 +96,37 @@ async function fillFormSequentially() {
 async function fillSingleField(field) {
   const meta = getFieldMeta(field);
 
-  // 1️⃣ N2O MULTI SELECT
   if (isN2OMultiSelect(field)) {
     await fillN2OMultiSelect(field);
     return;
   }
 
-  // 2️⃣ N2O SELECT
   if (isN2OSelect(field)) {
     await fillN2OSelect(field);
     return;
   }
 
-  // 3️⃣ N2O RADIO / CHECKBOX GROUP
   const radioGroup = field.closest(".zireael-radio-group");
   if (radioGroup) {
     fillN2ORadioGroup(radioGroup);
     return;
   }
 
-  // 4️⃣ N2O NUMBER
   if (isN2ONumberField(field)) {
     fillN2ONumberField(field);
     return;
   }
 
-  // 5️⃣ DATE
   if (isDateField(meta)) {
     fillDateField(field);
     return;
   }
 
-  // 6️⃣ NATIVE SELECT
   if (field.tagName === "SELECT") {
     fillNativeSelect(field);
     return;
   }
 
-  // 7️⃣ REGULAR INPUT
   simulateTyping(field, generateValue(meta));
 }
 
@@ -127,19 +182,17 @@ async function fillN2OMultiSelect(input) {
   );
   if (!dropdown) return;
 
-  const selectedLabels = Array.from(
+  const selected = Array.from(
     container.querySelectorAll(".zireael-tag__label")
-  ).map(el => el.innerText.trim());
+  ).map(e => e.innerText.trim());
 
-  const options = Array.from(
-    dropdown.querySelectorAll(".zireael-dropdown-option")
-  );
+  const options = dropdown.querySelectorAll(".zireael-dropdown-option");
 
   let added = 0;
-  for (const option of options) {
-    const label = option.innerText.trim();
-    if (!selectedLabels.includes(label)) {
-      option.click();
+  for (const opt of options) {
+    const label = opt.innerText.trim();
+    if (!selected.includes(label)) {
+      opt.click();
       added++;
       await delay(200);
     }
@@ -153,138 +206,46 @@ async function fillN2OMultiSelect(input) {
 
 function fillN2ORadioGroup(group) {
   const options = group.querySelectorAll("label.zireael-radio");
-  if (options.length > 0) {
-    options[0].click();
-  }
+  if (options.length > 0) options[0].click();
 }
 
 /* =========================
-   N2O NUMBER INPUT
+   N2O NUMBER
 ========================= */
 
 function isN2ONumberField(field) {
-  return (
-    field.tagName === "INPUT" &&
-    field.closest(".n2o-input-number")
-  );
+  return field.tagName === "INPUT" && field.closest(".n2o-input-number");
 }
 
 function fillN2ONumberField(field) {
-  const min = field.min !== "" ? parseInt(field.min, 10) : 0;
-  const max = field.max !== "" ? parseInt(field.max, 10) : min + 100;
-
-  const value = randomInt(min, Math.min(max, min + 50));
-
-  simulateTyping(field, String(value));
+  const min = field.min ? parseInt(field.min, 10) : 0;
+  const max = field.max ? parseInt(field.max, 10) : min + 100;
+  simulateTyping(field, String(randomInt(min, Math.min(max, min + 50))));
 }
 
 /* =========================
-   META EXTRACTION
+   META & VALUES
 ========================= */
 
 function getFieldMeta(field) {
-  const fieldBlock = field.closest(".zireael-field");
-
   const label =
-    fieldBlock?.querySelector(".zireael-field__label")?.innerText ||
-    field.getAttribute("aria-label") ||
+    field.closest(".zireael-field")
+      ?.querySelector(".zireael-field__label")
+      ?.innerText ||
     field.name ||
     field.id ||
     "";
 
-  return [
-    label,
-    field.placeholder,
-    field.name,
-    field.id,
-    field.className
-  ]
-    .join(" ")
-    .toLowerCase();
+  return label.toLowerCase();
 }
-
-/* =========================
-   INPUT SIMULATION
-========================= */
-
-function simulateTyping(el, value) {
-  if (!value) return;
-
-  el.focus();
-  el.value = "";
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-
-  for (const char of value) {
-    el.value += char;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
-  el.dispatchEvent(new Event("change", { bubbles: true }));
-  el.blur();
-}
-
-/* =========================
-   VALUE GENERATION
-========================= */
 
 function generateValue(meta) {
-  if (meta.includes("фам")) return generateLastName();
-  if (meta.includes("имя")) return generateFirstName();
-  if (meta.includes("отче")) return generatePatronymic();
-  if (meta.includes("email")) return generateEmail();
-  if (meta.includes("тел")) return generatePhone();
-  if (meta.includes("snils") || meta.includes("снилс")) return generateSnils();
-  return "Test value";
-}
-
-function generateFirstName() {
-  return random(["Иван", "Пётр", "Алексей", "Дмитрий"]);
-}
-
-function generateLastName() {
-  return random(["Иванов", "Петров", "Сидоров", "Смирнов"]);
-}
-
-function generatePatronymic() {
-  return random(["Иванович", "Петрович", "Алексеевич"]);
-}
-
-function generateEmail() {
-  return `test${Math.floor(Math.random() * 10000)}@gmail.com`;
-}
-
-function generatePhone() {
-  return `+7${Math.floor(9000000000 + Math.random() * 999999999)}`;
-}
-
-function random(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function randomInt(min, max) {
-  return Math.floor(min + Math.random() * (max - min + 1));
-}
-
-/* =========================
-   SNILS
-========================= */
-
-function generateSnils() {
-  const digits = Array.from({ length: 9 }, () =>
-    Math.floor(Math.random() * 10)
-  );
-
-  const sum = digits.reduce(
-    (acc, d, i) => acc + d * (9 - i),
-    0
-  );
-
-  let control;
-  if (sum < 100) control = sum;
-  else if (sum === 100 || sum === 101) control = 0;
-  else control = sum % 101;
-
-  return `${digits.slice(0,3).join("")}-${digits.slice(3,6).join("")}-${digits.slice(6).join("")} ${String(control).padStart(2,"0")}`;
+  if (meta.includes("фам")) return random(["Иванов", "Петров"]);
+  if (meta.includes("имя")) return random(["Иван", "Алексей"]);
+  if (meta.includes("отче")) return random(["Иванович", "Петрович"]);
+  if (meta.includes("снилс")) return generateSnils();
+  if (meta.includes("email")) return `test${Date.now()}@mail.ru`;
+  return "Test";
 }
 
 /* =========================
@@ -301,30 +262,41 @@ function fillDateField(field) {
 
 function generateRandomDate() {
   const start = new Date(1995, 11, 17);
-  const end = new Date();
-  const d = new Date(
-    start.getTime() + Math.random() * (end - start)
-  );
-
+  const d = new Date(start.getTime() + Math.random() * (Date.now() - start));
   return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
 }
 
 /* =========================
-   NATIVE SELECT
+   HELPERS
 ========================= */
 
-function fillNativeSelect(select) {
-  const options = Array.from(select.options).filter(o => o.value);
-  if (options.length > 0) {
-    select.value = options[0].value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+function simulateTyping(el, value) {
+  el.focus();
+  el.value = "";
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  for (const c of value) {
+    el.value += c;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
   }
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  el.blur();
 }
 
-/* =========================
-   UTILS
-========================= */
+function random(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomInt(min, max) {
+  return Math.floor(min + Math.random() * (max - min + 1));
+}
+
+function generateSnils() {
+  const d = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10));
+  const sum = d.reduce((a, v, i) => a + v * (9 - i), 0);
+  const c = sum < 100 ? sum : sum % 101;
+  return `${d.slice(0,3).join("")}-${d.slice(3,6).join("")}-${d.slice(6).join("")} ${String(c).padStart(2,"0")}`;
+}
 
 function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(r => setTimeout(r, ms));
 }
