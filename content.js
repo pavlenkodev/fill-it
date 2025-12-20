@@ -3,9 +3,9 @@
 ========================= */
 
 const SETTINGS = {
-  SKIP_FILLED_FIELDS: true,   // не трогать, если поле уже заполнено
-  CHECK_NEW_FIELDS: true,     // повторно проверить форму после заполнения
-  MAX_PASSES: 2               // максимум проходов по форме
+  SKIP_FILLED_FIELDS: true,
+  CHECK_NEW_FIELDS: true,
+  MAX_PASSES: 2
 };
 
 /* =========================
@@ -24,10 +24,9 @@ chrome.runtime.onMessage.addListener((message) => {
 
 async function fillFormWithRecheck() {
   let pass = 0;
-
   while (pass < SETTINGS.MAX_PASSES) {
-    const filledSomething = await fillFormSequentially();
-    if (!SETTINGS.CHECK_NEW_FIELDS || !filledSomething) break;
+    const filled = await fillFormSequentially();
+    if (!SETTINGS.CHECK_NEW_FIELDS || !filled) break;
     pass++;
   }
 }
@@ -50,7 +49,6 @@ async function fillFormSequentially() {
   for (const field of fields) {
     try {
       if (SETTINGS.SKIP_FILLED_FIELDS && isFieldFilled(field)) continue;
-
       await fillSingleField(field);
       filledSomething = true;
       await delay(300);
@@ -67,25 +65,21 @@ async function fillFormSequentially() {
 ========================= */
 
 function isFieldFilled(field) {
-  // N2O MULTI SELECT
   if (isN2OMultiSelect(field)) {
-    return field
-      .closest(".zireael-multiple-selector")
+    return field.closest(".zireael-multiple-selector")
       ?.querySelector(".zireael-tag") !== null;
   }
 
-  // RADIO GROUP
   const radioGroup = field.closest(".zireael-radio-group");
   if (radioGroup) {
     return radioGroup.querySelector("input:checked") !== null;
   }
 
-  // SELECT
-  if (field.tagName === "SELECT") {
-    return field.value !== "";
+  const checkbox = field.closest(".zireael-checkbox");
+  if (checkbox) {
+    return checkbox.classList.contains("zireael-checkbox_checked");
   }
 
-  // INPUT / TEXTAREA
   return field.value && field.value.trim() !== "";
 }
 
@@ -95,6 +89,11 @@ function isFieldFilled(field) {
 
 async function fillSingleField(field) {
   const meta = getFieldMeta(field);
+
+  if (isN2OCheckbox(field)) {
+    fillN2OCheckbox(field);
+    return;
+  }
 
   if (isN2OMultiSelect(field)) {
     await fillN2OMultiSelect(field);
@@ -131,16 +130,34 @@ async function fillSingleField(field) {
 }
 
 /* =========================
-   N2O SELECT (SINGLE)
+   N2O CHECKBOX
+========================= */
+
+function isN2OCheckbox(field) {
+  return (
+    field.type === "checkbox" &&
+    field.closest(".zireael-checkbox")
+  );
+}
+
+function fillN2OCheckbox(field) {
+  const label = field.closest("label.zireael-checkbox");
+  if (!label) return;
+
+  if (label.classList.contains("zireael-checkbox_unchecked")) {
+    label.click();
+  }
+}
+
+/* =========================
+   N2O SELECT / MULTI
 ========================= */
 
 function isN2OSelect(field) {
-  return (
-    field.tagName === "INPUT" &&
-    field.classList.contains("zireael-input") &&
-    field.closest(".zireael-input-select") &&
-    !field.closest(".zireael-multiple-selector")
-  );
+  return field.tagName === "INPUT"
+    && field.classList.contains("zireael-input")
+    && field.closest(".zireael-input-select")
+    && !field.closest(".zireael-multiple-selector");
 }
 
 async function fillN2OSelect(input) {
@@ -157,16 +174,10 @@ async function fillN2OSelect(input) {
   if (option) option.click();
 }
 
-/* =========================
-   N2O MULTI SELECT
-========================= */
-
 function isN2OMultiSelect(field) {
-  return (
-    field.tagName === "INPUT" &&
-    field.classList.contains("zireael-input") &&
-    field.closest(".zireael-multiple-selector")
-  );
+  return field.tagName === "INPUT"
+    && field.classList.contains("zireael-input")
+    && field.closest(".zireael-multiple-selector");
 }
 
 async function fillN2OMultiSelect(input) {
@@ -190,8 +201,7 @@ async function fillN2OMultiSelect(input) {
 
   let added = 0;
   for (const opt of options) {
-    const label = opt.innerText.trim();
-    if (!selected.includes(label)) {
+    if (!selected.includes(opt.innerText.trim())) {
       opt.click();
       added++;
       await delay(200);
@@ -201,7 +211,7 @@ async function fillN2OMultiSelect(input) {
 }
 
 /* =========================
-   N2O RADIO / CHECKBOX
+   RADIO / NUMBER
 ========================= */
 
 function fillN2ORadioGroup(group) {
@@ -209,34 +219,23 @@ function fillN2ORadioGroup(group) {
   if (options.length > 0) options[0].click();
 }
 
-/* =========================
-   N2O NUMBER
-========================= */
-
 function isN2ONumberField(field) {
   return field.tagName === "INPUT" && field.closest(".n2o-input-number");
 }
 
 function fillN2ONumberField(field) {
-  const min = field.min ? parseInt(field.min, 10) : 0;
-  const max = field.max ? parseInt(field.max, 10) : min + 100;
-  simulateTyping(field, String(randomInt(min, Math.min(max, min + 50))));
+  simulateTyping(field, String(randomInt(1, 20)));
 }
 
 /* =========================
-   META & VALUES
+   META / VALUES / DATE
 ========================= */
 
 function getFieldMeta(field) {
-  const label =
-    field.closest(".zireael-field")
-      ?.querySelector(".zireael-field__label")
-      ?.innerText ||
-    field.name ||
-    field.id ||
-    "";
-
-  return label.toLowerCase();
+  return field.closest(".zireael-field")
+    ?.querySelector(".zireael-field__label")
+    ?.innerText
+    ?.toLowerCase() || "";
 }
 
 function generateValue(meta) {
@@ -248,22 +247,12 @@ function generateValue(meta) {
   return "Test";
 }
 
-/* =========================
-   DATE
-========================= */
-
 function isDateField(meta) {
   return meta.includes("дата");
 }
 
 function fillDateField(field) {
   simulateTyping(field, generateRandomDate());
-}
-
-function generateRandomDate() {
-  const start = new Date(1995, 11, 17);
-  const d = new Date(start.getTime() + Math.random() * (Date.now() - start));
-  return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
 }
 
 /* =========================
@@ -280,6 +269,12 @@ function simulateTyping(el, value) {
   }
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.blur();
+}
+
+function generateRandomDate() {
+  const start = new Date(1995, 11, 17);
+  const d = new Date(start.getTime() + Math.random() * (Date.now() - start));
+  return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`;
 }
 
 function random(arr) {
