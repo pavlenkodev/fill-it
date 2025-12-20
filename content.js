@@ -1,9 +1,13 @@
 /* =========================
-   SETTINGS
+   RUNTIME OPTIONS
 ========================= */
 
+let RUNTIME_OPTIONS = {
+  onlyRequired: false,
+  skipFilled: true
+};
+
 const SETTINGS = {
-  SKIP_FILLED_FIELDS: true,
   CHECK_NEW_FIELDS: true,
   MAX_PASSES: 2
 };
@@ -14,6 +18,10 @@ const SETTINGS = {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "FILL_FORM") {
+    RUNTIME_OPTIONS = {
+      ...RUNTIME_OPTIONS,
+      ...(message.options || {})
+    };
     fillFormWithRecheck();
   }
 });
@@ -40,15 +48,26 @@ async function fillFormSequentially() {
 
   const fields = Array.from(
     document.querySelectorAll("input, textarea, select")
-  ).filter(f =>
-    !f.disabled &&
-    !f.readOnly &&
-    f.offsetParent !== null
-  );
+  ).filter(field => {
+    if (field.disabled || field.readOnly || field.offsetParent === null) {
+      return false;
+    }
+
+    if (RUNTIME_OPTIONS.onlyRequired) {
+      return (
+        field.required ||
+        field.getAttribute("aria-required") === "true" ||
+        field.closest(".zireael-field_required")
+      );
+    }
+
+    return true;
+  });
 
   for (const field of fields) {
     try {
-      if (SETTINGS.SKIP_FILLED_FIELDS && isFieldFilled(field)) continue;
+      if (RUNTIME_OPTIONS.skipFilled && isFieldFilled(field)) continue;
+
       await fillSingleField(field);
       filledSomething = true;
       await delay(300);
@@ -66,7 +85,8 @@ async function fillFormSequentially() {
 
 function isFieldFilled(field) {
   if (isN2OMultiSelect(field)) {
-    return field.closest(".zireael-multiple-selector")
+    return field
+      .closest(".zireael-multiple-selector")
       ?.querySelector(".zireael-tag") !== null;
   }
 
@@ -130,7 +150,7 @@ async function fillSingleField(field) {
 }
 
 /* =========================
-   N2O SELECT (SINGLE, WITH / WITHOUT SEARCH)
+   N2O SELECT (SINGLE)
 ========================= */
 
 function isN2OSelect(field) {
@@ -147,7 +167,6 @@ async function fillN2OSelect(input) {
     ".zireael-dropdown-popover_opened .zireael-dropdown-options"
   );
 
-  // если dropdown ещё не открыт — открываем
   if (!dropdown) {
     input.focus();
     input.click();
@@ -217,6 +236,7 @@ function isN2OCheckbox(field) {
 function fillN2OCheckbox(field) {
   const label = field.closest("label.zireael-checkbox");
   if (!label) return;
+
   if (label.classList.contains("zireael-checkbox_unchecked")) {
     label.click();
   }
@@ -275,10 +295,12 @@ function simulateTyping(el, value) {
   el.focus();
   el.value = "";
   el.dispatchEvent(new Event("input", { bubbles: true }));
+
   for (const c of value) {
     el.value += c;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
+
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.blur();
 }
