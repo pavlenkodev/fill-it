@@ -11,11 +11,10 @@ chrome.runtime.onMessage.addListener((message) => {
 async function fillFormSequentially() {
   const fields = Array.from(
     document.querySelectorAll("input, textarea, select")
-  ).filter(
-    f =>
-      !f.disabled &&
-      !f.readOnly &&
-      f.offsetParent !== null
+  ).filter(f =>
+    !f.disabled &&
+    !f.readOnly &&
+    f.offsetParent !== null
   );
 
   for (const field of fields) {
@@ -35,51 +34,57 @@ async function fillFormSequentially() {
 async function fillSingleField(field) {
   const meta = getFieldMeta(field);
 
-  // 1️⃣ N2O SELECT
+  // 1️⃣ N2O MULTI SELECT
+  if (isN2OMultiSelect(field)) {
+    await fillN2OMultiSelect(field);
+    return;
+  }
+
+  // 2️⃣ N2O SELECT
   if (isN2OSelect(field)) {
     await fillN2OSelect(field);
     return;
   }
 
-  // 2️⃣ N2O RADIO / CHECKBOX GROUP
+  // 3️⃣ N2O RADIO / CHECKBOX GROUP
   const radioGroup = field.closest(".zireael-radio-group");
   if (radioGroup) {
     fillN2ORadioGroup(radioGroup);
     return;
   }
 
-  // 3️⃣ DATE
+  // 4️⃣ DATE
   if (isDateField(meta)) {
     fillDateField(field);
     return;
   }
 
-  // 4️⃣ NATIVE SELECT
+  // 5️⃣ NATIVE SELECT
   if (field.tagName === "SELECT") {
     fillNativeSelect(field);
     return;
   }
 
-  // 5️⃣ REGULAR INPUT
+  // 6️⃣ REGULAR INPUT
   simulateTyping(field, generateValue(meta));
 }
 
 /* =========================
-   N2O SELECT (ZIREAEL)
+   N2O SELECT (SINGLE)
 ========================= */
 
 function isN2OSelect(field) {
   return (
     field.tagName === "INPUT" &&
     field.classList.contains("zireael-input") &&
-    field.closest(".zireael-input-select")
+    field.closest(".zireael-input-select") &&
+    !field.closest(".zireael-multiple-selector")
   );
 }
 
 async function fillN2OSelect(input) {
   input.focus();
   input.click();
-
   await delay(400);
 
   const dropdown = document.querySelector(
@@ -92,20 +97,63 @@ async function fillN2OSelect(input) {
 }
 
 /* =========================
-   N2O RADIO GROUP
+   N2O MULTI SELECT
 ========================= */
 
-function fillN2ORadioGroup(group) {
-  const options = group.querySelectorAll(
-    "label.zireael-radio"
+function isN2OMultiSelect(field) {
+  return (
+    field.tagName === "INPUT" &&
+    field.classList.contains("zireael-input") &&
+    field.closest(".zireael-multiple-selector")
   );
-  if (options.length > 0) {
-    options[0].click(); // выбираем первый вариант
+}
+
+async function fillN2OMultiSelect(input) {
+  const container = input.closest(".zireael-multiple-selector");
+  if (!container) return;
+
+  input.focus();
+  input.click();
+  await delay(400);
+
+  const dropdown = document.querySelector(
+    ".zireael-dropdown-popover_opened .zireael-dropdown-options"
+  );
+  if (!dropdown) return;
+
+  const selectedLabels = Array.from(
+    container.querySelectorAll(".zireael-tag__label")
+  ).map(el => el.innerText.trim());
+
+  const options = Array.from(
+    dropdown.querySelectorAll(".zireael-dropdown-option")
+  );
+
+  let added = 0;
+  for (const option of options) {
+    const label = option.innerText.trim();
+    if (!selectedLabels.includes(label)) {
+      option.click();
+      added++;
+      await delay(200);
+    }
+    if (added >= 2) break;
   }
 }
 
 /* =========================
-   META EXTRACTION (FIXED)
+   N2O RADIO / CHECKBOX
+========================= */
+
+function fillN2ORadioGroup(group) {
+  const options = group.querySelectorAll("label.zireael-radio");
+  if (options.length > 0) {
+    options[0].click();
+  }
+}
+
+/* =========================
+   META EXTRACTION
 ========================= */
 
 function getFieldMeta(field) {
@@ -115,6 +163,7 @@ function getFieldMeta(field) {
     fieldBlock?.querySelector(".zireael-field__label")?.innerText ||
     field.getAttribute("aria-label") ||
     field.name ||
+    field.id ||
     "";
 
   return [
@@ -129,7 +178,7 @@ function getFieldMeta(field) {
 }
 
 /* =========================
-   INPUT TYPING
+   INPUT SIMULATION
 ========================= */
 
 function simulateTyping(el, value) {
@@ -157,7 +206,7 @@ function generateValue(meta) {
   if (meta.includes("имя")) return generateFirstName();
   if (meta.includes("отче")) return generatePatronymic();
   if (meta.includes("email")) return generateEmail();
-  if (meta.includes("phone") || meta.includes("тел")) return generatePhone();
+  if (meta.includes("тел")) return generatePhone();
   if (meta.includes("snils") || meta.includes("снилс")) return generateSnils();
   return "Test value";
 }
