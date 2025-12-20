@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Form Autofill for QA",
+  "version": "1.2.0",
+  "description": "Smart autofill for complex SPA forms (React/Vue/Angular)",
+  "permissions": ["activeTab"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ]
+}
