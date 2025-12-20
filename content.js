@@ -130,54 +130,50 @@ async function fillSingleField(field) {
 }
 
 /* =========================
-   N2O CHECKBOX
-========================= */
-
-function isN2OCheckbox(field) {
-  return (
-    field.type === "checkbox" &&
-    field.closest(".zireael-checkbox")
-  );
-}
-
-function fillN2OCheckbox(field) {
-  const label = field.closest("label.zireael-checkbox");
-  if (!label) return;
-
-  if (label.classList.contains("zireael-checkbox_unchecked")) {
-    label.click();
-  }
-}
-
-/* =========================
-   N2O SELECT / MULTI
+   N2O SELECT (SINGLE, WITH / WITHOUT SEARCH)
 ========================= */
 
 function isN2OSelect(field) {
-  return field.tagName === "INPUT"
-    && field.classList.contains("zireael-input")
-    && field.closest(".zireael-input-select")
-    && !field.closest(".zireael-multiple-selector");
+  return (
+    field.tagName === "INPUT" &&
+    field.classList.contains("zireael-input") &&
+    field.closest(".egisz-select-wrapper") &&
+    !field.closest(".zireael-multiple-selector")
+  );
 }
 
 async function fillN2OSelect(input) {
-  input.focus();
-  input.click();
-  await delay(400);
-
-  const dropdown = document.querySelector(
+  let dropdown = document.querySelector(
     ".zireael-dropdown-popover_opened .zireael-dropdown-options"
   );
+
+  // если dropdown ещё не открыт — открываем
+  if (!dropdown) {
+    input.focus();
+    input.click();
+    await delay(400);
+
+    dropdown = document.querySelector(
+      ".zireael-dropdown-popover_opened .zireael-dropdown-options"
+    );
+  }
+
   if (!dropdown) return;
 
   const option = dropdown.querySelector(".zireael-dropdown-option");
   if (option) option.click();
 }
 
+/* =========================
+   N2O MULTI SELECT
+========================= */
+
 function isN2OMultiSelect(field) {
-  return field.tagName === "INPUT"
-    && field.classList.contains("zireael-input")
-    && field.closest(".zireael-multiple-selector");
+  return (
+    field.tagName === "INPUT" &&
+    field.classList.contains("zireael-input") &&
+    field.closest(".zireael-multiple-selector")
+  );
 }
 
 async function fillN2OMultiSelect(input) {
@@ -211,13 +207,29 @@ async function fillN2OMultiSelect(input) {
 }
 
 /* =========================
-   RADIO / NUMBER
+   CHECKBOX / RADIO
 ========================= */
+
+function isN2OCheckbox(field) {
+  return field.type === "checkbox" && field.closest(".zireael-checkbox");
+}
+
+function fillN2OCheckbox(field) {
+  const label = field.closest("label.zireael-checkbox");
+  if (!label) return;
+  if (label.classList.contains("zireael-checkbox_unchecked")) {
+    label.click();
+  }
+}
 
 function fillN2ORadioGroup(group) {
   const options = group.querySelectorAll("label.zireael-radio");
   if (options.length > 0) options[0].click();
 }
+
+/* =========================
+   NUMBER
+========================= */
 
 function isN2ONumberField(field) {
   return field.tagName === "INPUT" && field.closest(".n2o-input-number");
