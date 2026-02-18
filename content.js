@@ -49,7 +49,12 @@ async function fillFormSequentially() {
   const fields = Array.from(
     document.querySelectorAll("input, textarea, select")
   ).filter(field => {
-    if (field.disabled || field.readOnly || field.offsetParent === null) {
+    if (field.disabled || field.offsetParent === null) {
+      return false;
+    }
+
+    // N2O select и Zireael date — readonly по дизайну, их нельзя пропускать
+    if (field.readOnly && !isN2OSelect(field) && !isN2OMultiSelect(field) && !isZiraelDateInput(field) && !isZiraelDateTimeInput(field)) {
       return false;
     }
 
@@ -85,9 +90,11 @@ async function fillFormSequentially() {
 
 function isFieldFilled(field) {
   if (isN2OMultiSelect(field)) {
-    return field
-      .closest(".zireael-multiple-selector")
-      ?.querySelector(".zireael-tag") !== null;
+    return field.value && field.value.trim() !== "";
+  }
+
+  if (isN2OSelect(field)) {
+    return field.value && field.value.trim() !== "";
   }
 
   const radioGroup = field.closest(".zireael-radio-group");
@@ -136,6 +143,16 @@ async function fillSingleField(field) {
     return;
   }
 
+  if (isZiraelDateTimeInput(field)) {
+    fillZiraelDateTimeInput(field);
+    return;
+  }
+
+  if (isZiraelDateInput(field)) {
+    fillZiraelDateInput(field);
+    return;
+  }
+
   if (isDateField(meta)) {
     fillDateField(field);
     return;
@@ -156,31 +173,31 @@ async function fillSingleField(field) {
 function isN2OSelect(field) {
   return (
     field.tagName === "INPUT" &&
-    field.classList.contains("zireael-input") &&
-    field.closest(".egisz-select-wrapper") &&
-    !field.closest(".zireael-multiple-selector")
+    field.classList.contains("n2o-inp") &&
+    field.closest(".egisz-select-wrapper")
   );
 }
 
 async function fillN2OSelect(input) {
-  let dropdown = document.querySelector(
-    ".zireael-dropdown-popover_opened .zireael-dropdown-options"
-  );
+  const wrapper = input.closest(".egisz-select-wrapper");
+  if (!wrapper) return;
 
-  if (!dropdown) {
-    input.focus();
-    input.click();
-    await delay(400);
+  // Кликаем по toggle-кнопке чтобы открыть дропдаун
+  const toggle = wrapper.querySelector(".n2o-input-select__toggle");
+  if (!toggle) return;
 
-    dropdown = document.querySelector(
-      ".zireael-dropdown-popover_opened .zireael-dropdown-options"
-    );
+  simulateClick(toggle);
+  await delay(500);
+
+  // Находим меню и кликаем первую опцию
+  const menu = wrapper.querySelector(".n2o-input-select__menu");
+  if (!menu) return;
+
+  const option = menu.querySelector("button.dropdown-item");
+  if (option) {
+    simulateClick(option);
+    await delay(200);
   }
-
-  if (!dropdown) return;
-
-  const option = dropdown.querySelector(".zireael-dropdown-option");
-  if (option) option.click();
 }
 
 /* =========================
@@ -189,40 +206,34 @@ async function fillN2OSelect(input) {
 
 function isN2OMultiSelect(field) {
   return (
-    field.tagName === "INPUT" &&
-    field.classList.contains("zireael-input") &&
-    field.closest(".zireael-multiple-selector")
+    field.tagName === "TEXTAREA" &&
+    field.classList.contains("n2o-inp--multi") &&
+    field.closest(".egisz-select-wrapper")
   );
 }
 
 async function fillN2OMultiSelect(input) {
-  const container = input.closest(".zireael-multiple-selector");
-  if (!container) return;
+  const wrapper = input.closest(".egisz-select-wrapper");
+  if (!wrapper) return;
 
-  input.focus();
-  input.click();
-  await delay(400);
+  const toggle = wrapper.querySelector(".n2o-input-select__toggle");
+  if (!toggle) return;
 
-  const dropdown = document.querySelector(
-    ".zireael-dropdown-popover_opened .zireael-dropdown-options"
-  );
-  if (!dropdown) return;
+  simulateClick(toggle);
+  await delay(500);
 
-  const selected = Array.from(
-    container.querySelectorAll(".zireael-tag__label")
-  ).map(e => e.innerText.trim());
+  const menu = wrapper.querySelector(".n2o-input-select__menu");
+  if (!menu) return;
 
-  const options = dropdown.querySelectorAll(".zireael-dropdown-option");
-
-  let added = 0;
-  for (const opt of options) {
-    if (!selected.includes(opt.innerText.trim())) {
-      opt.click();
-      added++;
-      await delay(200);
-    }
-    if (added >= 2) break;
+  const option = menu.querySelector("button.dropdown-item");
+  if (option) {
+    simulateClick(option);
+    await delay(200);
   }
+
+  // Закрываем дропдаун повторным кликом по toggle
+  simulateClick(toggle);
+  await delay(200);
 }
 
 /* =========================
@@ -260,6 +271,58 @@ function fillN2ONumberField(field) {
 }
 
 /* =========================
+   ZIREAEL DATE PICKER
+========================= */
+
+function isZiraelDateTimeInput(field) {
+  return (
+    field.tagName === "INPUT" &&
+    field.classList.contains("zireael-input") &&
+    field.closest(".zireael-datepicker")
+  );
+}
+
+function fillZiraelDateTimeInput(field) {
+  const date = generateRandomDate();
+  const hh = String(randomInt(8, 20)).padStart(2, "0");
+  const mm = String(randomInt(0, 59)).padStart(2, "0");
+  const ss = String(randomInt(0, 59)).padStart(2, "0");
+  const value = `${date} ${hh}:${mm}:${ss}`;
+
+  field.focus();
+
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  nativeSetter.call(field, value);
+
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  field.blur();
+}
+
+function isZiraelDateInput(field) {
+  return (
+    field.tagName === "INPUT" &&
+    field.classList.contains("zireael-input") &&
+    field.closest(".zireael-date-range-picker")
+  );
+}
+
+function fillZiraelDateInput(field) {
+  const date = generateRandomDate();
+  const value = date + " — " + date;
+
+  field.focus();
+
+  // Используем нативный setter для совместимости с React
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  nativeSetter.call(field, value);
+
+  field.dispatchEvent(new Event("input", { bubbles: true }));
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  field.blur();
+}
+
+/* =========================
    META / VALUES / DATE
 ========================= */
 
@@ -290,6 +353,16 @@ function fillDateField(field) {
 /* =========================
    HELPERS
 ========================= */
+
+function simulateClick(el) {
+  el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
+  el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+}
+
+function closeOpenDropdown() {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, bubbles: true }));
+}
 
 function simulateTyping(el, value) {
   el.focus();
