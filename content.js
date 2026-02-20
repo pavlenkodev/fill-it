@@ -16,12 +16,15 @@ const SETTINGS = {
    ENTRY POINT
 ========================= */
 
+let currentRunFilled = new WeakSet();
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "FILL_FORM") {
     RUNTIME_OPTIONS = {
       ...RUNTIME_OPTIONS,
       ...(message.options || {})
     };
+    currentRunFilled = new WeakSet();
     fillFormWithRecheck();
   }
 });
@@ -71,9 +74,11 @@ async function fillFormSequentially() {
 
   for (const field of fields) {
     try {
+      if (currentRunFilled.has(field)) continue;
       if (RUNTIME_OPTIONS.skipFilled && isFieldFilled(field)) continue;
 
       await fillSingleField(field);
+      currentRunFilled.add(field);
       filledSomething = true;
       await delay(300);
     } catch (e) {
@@ -339,6 +344,7 @@ function generateValue(meta) {
   if (meta.includes("отче")) return random(["Иванович", "Петрович"]);
   if (meta.includes("снилс")) return generateSnils();
   if (meta.includes("email")) return `test${Date.now()}@mail.ru`;
+  if (meta.includes("номер")) return String(randomInt(1000000, 9999999));
   return "Test";
 }
 
@@ -366,14 +372,11 @@ function closeOpenDropdown() {
 
 function simulateTyping(el, value) {
   el.focus();
-  el.value = "";
+
+  const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+  nativeSetter.call(el, value);
+
   el.dispatchEvent(new Event("input", { bubbles: true }));
-
-  for (const c of value) {
-    el.value += c;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
   el.dispatchEvent(new Event("change", { bubbles: true }));
   el.blur();
 }
